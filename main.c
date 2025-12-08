@@ -5,20 +5,42 @@
 
 #include "config.h"
 
+#define PLAYER_A_BUTTON 0
+#define PLAYER_B_BUTTON 1
+
 uint32_t ms_since_boot = 0;
+
+typedef enum {
+	STOPPED,
+	PLAYER_A,
+	PLAYER_B
+} state_type;
+
+state_type state = STOPPED;
+
+uint32_t player_a_timer = STARTING_TIME_MS;
+uint32_t player_b_timer = STARTING_TIME_MS;
 
 ISR(TIM1_COMPA_vect)
 {
 	ms_since_boot++;
+
+	if(state == PLAYER_A) {
+		player_a_timer--;
+		if(player_a_timer == 0) { state = STOPPED; }
+	} else if(state == PLAYER_B) {
+		player_b_timer--;
+		if(player_b_timer == 0) { state = STOPPED; }
+	}
 }
 
 void setupio(void) {
 	// Set port A to inputs
 	DDRA = 0x00;
-	PORTA |= PORTA0 | PORTA1; // pull-up
+	PORTA |= _BV(PORTA0) | _BV(PORTA1); // pull-up
 
-	// Set port B0 to output
-	DDRB = 0x01;
+	// Set port B to output
+	DDRB = 0xFF;
 }
 
 void setup_clock(void) {
@@ -39,12 +61,17 @@ int main() {
 	sei();
 
 	while(true) {
-		uint32_t sec = ms_since_boot / 1000;
-		if(sec % 2 == 0) {
-			PORTB = 1;
-		} else {
-			PORTB = 0;
+		cli();
+		if(button_pressed(PLAYER_A_BUTTON) && player_b_timer != 0) {
+			state = PLAYER_B;
 		}
+
+		if(button_pressed(PLAYER_B_BUTTON) && player_a_timer != 0) {
+			state = PLAYER_A;
+		}
+
+		PORTB = 1 << state;
+		sei();
 	}
 }
 
