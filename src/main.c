@@ -21,8 +21,9 @@ typedef enum {
 
 volatile state_type state = STOPPED;
 
-volatile uint32_t player_a_timer = STARTING_TIME_MS;
-volatile uint32_t player_b_timer = STARTING_TIME_MS;
+volatile uint32_t player_a_timer = MAIN_TIME;
+volatile uint32_t player_b_timer = MAIN_TIME;
+volatile uint32_t move_started_at = MAIN_TIME;
 
 ISR(TIM1_COMPA_vect)
 {
@@ -70,8 +71,8 @@ void render_timer(unsigned long ms, uint8_t display) {
 	}
 
 	if (ms >= 60000) {
-		uint8_t sec = (ms + (1000 - 1)) / 1000 % 60;
-		uint8_t min = (ms + (1000 - 1)) / 1000 / 60;
+		uint8_t sec = ms / 1000 % 60;
+		uint8_t min = ms / 1000 / 60;
 
 		digits[3] = sec % 10;
 		digits[2] = sec / 10;
@@ -83,8 +84,8 @@ void render_timer(unsigned long ms, uint8_t display) {
 			}
 		}
 	} else {
-		uint8_t cs = (ms + 9) / 10 % 100;
-		uint8_t sec = (ms + 999) / 1000;
+		uint8_t cs = ms / 10 % 100;
+		uint8_t sec = ms / 1000;
 		digits[3] = cs % 10;
 		digits[2] = cs / 10;
 		if (sec != 0) {
@@ -112,6 +113,27 @@ render:
 	}
 }
 
+uint32_t get_increment(uint32_t player_timer) {
+	if (state == STOPPED) {
+		return 0;
+	}
+
+	#ifdef TIME_INCREMENT
+		#if INCREMENT_MODE == MODE_FISCHER
+			return TIME_INCREMENT;
+		#elif INCREMENT_MODE == MODE_BRONSTEIN
+			uint32_t difference = move_started_at - player_timer;
+			if(difference < TIME_INCREMENT) {
+				return difference;
+			} else {
+				return TIME_INCREMENT;
+			}
+		#endif
+	#else
+	return 0;
+	#endif
+}
+
 int main() {
 	cli();
 	setupio();
@@ -119,8 +141,8 @@ int main() {
 	setup_clock();
 	sei();
 
-	render_timer(STARTING_TIME_MS, DISPLAY_LEFT);
-	render_timer(STARTING_TIME_MS, DISPLAY_RIGHT);
+	render_timer(MAIN_TIME, DISPLAY_LEFT);
+	render_timer(MAIN_TIME, DISPLAY_RIGHT);
 
     as1115_send_command(DECODE_MODE_REG, 0xFF); // decode
     as1115_send_command(SCAN_LIMIT_REG, 0x07); // enable all digits
@@ -133,21 +155,15 @@ int main() {
 
 		cli();
 		if(button_pressed(PLAYER_A_BUTTON) && state != PLAYER_B && player_b_timer != 0 && player_a_timer != 0) {
-			#ifdef TIME_INCREMENT
-			if(state != STOPPED) {
-				player_a_timer += TIME_INCREMENT;
-			}
-			#endif
+			player_a_timer += get_increment(player_a_timer);
 			state = PLAYER_B;
+			move_started_at = player_b_timer;
 		}
 
 		if(button_pressed(PLAYER_B_BUTTON) && state != PLAYER_A && player_b_timer != 0 && player_a_timer != 0) {
-			#ifdef TIME_INCREMENT
-			if(state != STOPPED) {
-				player_b_timer += TIME_INCREMENT;
-			}
-			#endif
+			player_b_timer += get_increment(player_b_timer);
 			state = PLAYER_A;
+			move_started_at = player_a_timer;
 		}
 		sei();
 	}
