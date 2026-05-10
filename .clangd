@@ -1,0 +1,2 @@
+CompileFlags:
+   Add: ["-I/opt/avr8-gnu-toolchain-darwin_x86_64/avr/include", "-D__AVR_ATtiny84A__"]
