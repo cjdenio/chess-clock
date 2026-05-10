@@ -8,6 +8,10 @@
 #include "as1115.h"
 #include "i2c.h"
 
+#if MAIN_TIME > 5999000
+#error Main time too large.
+#endif
+
 #define PLAYER_A_BUTTON 0
 #define PLAYER_B_BUTTON 1
 
@@ -25,16 +29,18 @@ volatile uint32_t player_a_timer = MAIN_TIME;
 volatile uint32_t player_b_timer = MAIN_TIME;
 volatile uint32_t move_started_at = MAIN_TIME;
 
+volatile uint32_t finished_at = 0;
+
 ISR(TIM1_COMPA_vect)
 {
 	ms_since_boot++;
 
 	if(state == PLAYER_A) {
 		player_a_timer--;
-		if(player_a_timer == 0) { state = STOPPED; }
+		if(player_a_timer == 0) { state = STOPPED; finished_at = ms_since_boot; }
 	} else if(state == PLAYER_B) {
 		player_b_timer--;
-		if(player_b_timer == 0) { state = STOPPED; }
+		if(player_b_timer == 0) { state = STOPPED; finished_at = ms_since_boot; }
 	}
 }
 
@@ -134,6 +140,18 @@ uint32_t get_increment(uint32_t player_timer) {
 	#endif
 }
 
+void reset() {
+	cli();
+	state = STOPPED;
+	player_a_timer = MAIN_TIME;
+	player_b_timer = MAIN_TIME;
+	move_started_at = MAIN_TIME;
+	finished_at = 0;
+	sei();
+	render_timer(player_a_timer, DISPLAY_LEFT);
+	render_timer(player_b_timer, DISPLAY_RIGHT);
+}
+
 int main() {
 	cli();
 	setupio();
@@ -166,5 +184,9 @@ int main() {
 			move_started_at = player_a_timer;
 		}
 		sei();
+
+		if (state == STOPPED && (player_a_timer == 0 || player_b_timer == 0) && (ms_since_boot > finished_at + RESET_DELAY)) {
+			reset();
+		}
 	}
 }
