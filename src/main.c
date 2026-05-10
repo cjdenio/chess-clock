@@ -69,16 +69,29 @@ void render_timer(unsigned long ms, uint8_t display) {
 		goto render;
 	}
 
-	uint8_t sec = (ms + (1000 - 1)) / 1000 % 60;
-	uint8_t min = (ms + (1000 - 1)) / 1000 / 60;
+	if (ms >= 60000) {
+		uint8_t sec = (ms + (1000 - 1)) / 1000 % 60;
+		uint8_t min = (ms + (1000 - 1)) / 1000 / 60;
 
-	digits[3] = sec % 10;
-	digits[2] = sec / 10;
+		digits[3] = sec % 10;
+		digits[2] = sec / 10;
 
-	if (min != 0) {
-		digits[1] = min % 10;
-		if (min >= 10) {
-			digits[0] = min / 10;
+		if (min != 0) {
+			digits[1] = min % 10;
+			if (min >= 10) {
+				digits[0] = min / 10;
+			}
+		}
+	} else {
+		uint8_t cs = (ms + 9) / 10 % 100;
+		uint8_t sec = (ms + 999) / 1000;
+		digits[3] = cs % 10;
+		digits[2] = cs / 10;
+		if (sec != 0) {
+			digits[1] = sec % 10;
+			if (sec >= 10) {
+				digits[0] = sec / 10;
+			}
 		}
 	}
 
@@ -109,20 +122,31 @@ int main() {
 	render_timer(STARTING_TIME_MS, DISPLAY_LEFT);
 	render_timer(STARTING_TIME_MS, DISPLAY_RIGHT);
 
-	as1115_send_command(SHUTDOWN_REG, 0x01); // turn on
     as1115_send_command(DECODE_MODE_REG, 0xFF); // decode
     as1115_send_command(SCAN_LIMIT_REG, 0x07); // enable all digits
+    as1115_send_command(GLOBAL_INTENSITY_REG, 0x06); // set brightness
+    as1115_send_command(SHUTDOWN_REG, 0x01); // turn on
 
 	while(true) {
 		render_timer(player_a_timer, DISPLAY_LEFT);
 		render_timer(player_b_timer, DISPLAY_RIGHT);
 
 		cli();
-		if(button_pressed(PLAYER_A_BUTTON) && player_b_timer != 0 && player_a_timer != 0) {
+		if(button_pressed(PLAYER_A_BUTTON) && state != PLAYER_B && player_b_timer != 0 && player_a_timer != 0) {
+			#ifdef TIME_INCREMENT
+			if(state != STOPPED) {
+				player_a_timer += TIME_INCREMENT;
+			}
+			#endif
 			state = PLAYER_B;
 		}
 
-		if(button_pressed(PLAYER_B_BUTTON) && player_b_timer != 0 && player_a_timer != 0) {
+		if(button_pressed(PLAYER_B_BUTTON) && state != PLAYER_A && player_b_timer != 0 && player_a_timer != 0) {
+			#ifdef TIME_INCREMENT
+			if(state != STOPPED) {
+				player_b_timer += TIME_INCREMENT;
+			}
+			#endif
 			state = PLAYER_A;
 		}
 		sei();
