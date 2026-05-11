@@ -1,5 +1,6 @@
 #include <avr/interrupt.h>
 #include <avr/io.h>
+#include <avr/pgmspace.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -15,11 +16,28 @@
 #define PLAYER_A_BUTTON 0
 #define PLAYER_B_BUTTON 1
 
+PROGMEM const uint8_t startup_animation[][8] = {
+    {0xFF, 0xFF, 0xFF, 0x0A, 0x0A, 0xFF, 0xFF, 0xFF},
+    {0xFF, 0xFF, 0x0A, 0xFF, 0xFF, 0x0A, 0xFF, 0xFF},
+    {0xFF, 0x0A, 0xFF, 0xFF, 0xFF, 0xFF, 0x0A, 0xFF},
+    {0x0A, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x0A},
+    {0xFF, 0x0A, 0xFF, 0xFF, 0xFF, 0xFF, 0x0A, 0xFF},
+    {0xFF, 0xFF, 0x0A, 0xFF, 0xFF, 0x0A, 0xFF, 0xFF},
+    {0xFF, 0xFF, 0xFF, 0x0A, 0x0A, 0xFF, 0xFF, 0xFF},
+    {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
+};
+
 volatile uint32_t ms_since_boot = 0;
 
-typedef enum { STOPPED, PLAYER_A, PLAYER_B } state_type;
+typedef enum { STARTUP, STOPPED, PLAYER_A, PLAYER_B } state_type;
 
-volatile state_type state = STOPPED;
+#ifdef STARTUP_ANIMATION
+#define INITIAL_STATE STARTUP
+#else
+#define INITIAL_STATE STOPPED
+#endif
+
+volatile state_type state = INITIAL_STATE;
 
 volatile uint32_t player_a_timer = MAIN_TIME;
 volatile uint32_t player_b_timer = MAIN_TIME;
@@ -151,6 +169,24 @@ void reset() {
   render_timer(player_b_timer, DISPLAY_RIGHT);
 }
 
+void handle_buttons() {
+  cli();
+  if (button_pressed(PLAYER_A_BUTTON) && state != PLAYER_B &&
+      player_b_timer != 0 && player_a_timer != 0) {
+    player_a_timer += get_increment(player_a_timer);
+    state = PLAYER_B;
+    move_started_at = player_b_timer;
+  }
+
+  if (button_pressed(PLAYER_B_BUTTON) && state != PLAYER_A &&
+      player_b_timer != 0 && player_a_timer != 0) {
+    player_b_timer += get_increment(player_b_timer);
+    state = PLAYER_A;
+    move_started_at = player_a_timer;
+  }
+  sei();
+}
+
 int main() {
   cli();
   setupio();
@@ -158,37 +194,40 @@ int main() {
   setup_clock();
   sei();
 
-  render_timer(MAIN_TIME, DISPLAY_LEFT);
-  render_timer(MAIN_TIME, DISPLAY_RIGHT);
+  as1115_blank_display();
 
-  as1115_send_command(DECODE_MODE_REG, 0xFF);      // decode
-  as1115_send_command(SCAN_LIMIT_REG, 0x07);       // enable all digits
-  as1115_send_command(GLOBAL_INTENSITY_REG, 0x06); // set brightness
-  as1115_send_command(SHUTDOWN_REG, 0x01);         // turn on
+  as1115_send_command(DECODE_MODE_REG, 0xFF); // decode
+  as1115_send_command(SCAN_LIMIT_REG, 0x07);  // enable all digits
+  as1115_send_command(GLOBAL_INTENSITY_REG,
+                      DISPLAY_BRIGHTNESS); // set brightness
+  as1115_send_command(SHUTDOWN_REG, 0x01); // turn on
 
   while (true) {
-    render_timer(player_a_timer, DISPLAY_LEFT);
-    render_timer(player_b_timer, DISPLAY_RIGHT);
+    switch (state) {
+    case STARTUP: {
+      size_t frame = ms_since_boot / 100;
+      if (frame >= sizeof startup_animation / 8) {
+        state = STOPPED;
+        break;
+      }
 
-    cli();
-    if (button_pressed(PLAYER_A_BUTTON) && state != PLAYER_B &&
-        player_b_timer != 0 && player_a_timer != 0) {
-      player_a_timer += get_increment(player_a_timer);
-      state = PLAYER_B;
-      move_started_at = player_b_timer;
+      for (int i = 0; i < 8; i++) {
+        uint8_t byte = pgm_read_byte(&startup_animation[frame][i]);
+        as1115_send_command(i + 1, byte);
+      }
+      break;
     }
-
-    if (button_pressed(PLAYER_B_BUTTON) && state != PLAYER_A &&
-        player_b_timer != 0 && player_a_timer != 0) {
-      player_b_timer += get_increment(player_b_timer);
-      state = PLAYER_A;
-      move_started_at = player_a_timer;
-    }
-    sei();
-
-    if (state == STOPPED && (player_a_timer == 0 || player_b_timer == 0) &&
-        (ms_since_boot > finished_at + RESET_DELAY)) {
-      reset();
+    case PLAYER_A:
+    case PLAYER_B:
+    case STOPPED:
+      render_timer(player_a_timer, DISPLAY_LEFT);
+      render_timer(player_b_timer, DISPLAY_RIGHT);
+      handle_buttons();
+      if (state == STOPPED && (player_a_timer == 0 || player_b_timer == 0) &&
+          (ms_since_boot > finished_at + RESET_DELAY)) {
+        reset();
+      }
+      break;
     }
   }
 }

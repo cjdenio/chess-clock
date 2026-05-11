@@ -21,3 +21,4 @@
 #define DIG_6_7_INTENSITY_REG 0x13
 
 int as1115_send_command(uint8_t cmd, uint8_t data);
+void as1115_blank_display();
