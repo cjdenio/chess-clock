@@ -141,7 +141,7 @@ uint32_t get_increment(uint32_t player_timer) {
     return 0;
   }
 
-#ifdef TIME_INCREMENT
+#if defined(TIME_INCREMENT) && defined(INCREMENT_MODE)
 #if INCREMENT_MODE == MODE_FISCHER
   return TIME_INCREMENT;
 #elif INCREMENT_MODE == MODE_BRONSTEIN
